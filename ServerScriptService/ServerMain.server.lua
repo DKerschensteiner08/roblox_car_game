@@ -49,28 +49,37 @@ for _, functionName in pairs(RemoteNames.Functions) do
 end
 
 local servicesFolder = ServerScriptService:WaitForChild("Services")
-local orderedServices = {
-	require(servicesFolder:WaitForChild("PlayerDataService")),
-	require(servicesFolder:WaitForChild("CarService")),
-	require(servicesFolder:WaitForChild("EarningService")),
-	require(servicesFolder:WaitForChild("ShopService")),
-	require(servicesFolder:WaitForChild("ZoneService")),
-	require(servicesFolder:WaitForChild("RebirthService")),
+local serviceModuleNames = {
+	"PlayerDataService",
+	"CarService",
+	"EarningService",
+	"ShopService",
+	"ZoneService",
+	"RebirthService",
 }
+
+local serviceMap: {[string]: any} = {}
+for _, moduleName in ipairs(serviceModuleNames) do
+	serviceMap[moduleName] = require(servicesFolder:WaitForChild(moduleName))
+end
 
 local context = {
 	ReplicatedStorage = ReplicatedStorage,
 	ServerScriptService = ServerScriptService,
 	Remotes = remotesFolder,
 	Modules = modulesFolder,
+	Services = serviceMap,
 }
 
-for _, service in ipairs(orderedServices) do
+for _, moduleName in ipairs(serviceModuleNames) do
+	local service = serviceMap[moduleName]
 	if service.Init then
 		service.Init(context)
 	end
 end
-for _, service in ipairs(orderedServices) do
+
+for _, moduleName in ipairs(serviceModuleNames) do
+	local service = serviceMap[moduleName]
 	if service.Start then
 		service.Start()
 	end
