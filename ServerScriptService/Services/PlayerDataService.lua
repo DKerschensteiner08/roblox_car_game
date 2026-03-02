@@ -2,6 +2,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local DataStoreService = game:GetService("DataStoreService")
 
 local PlayerDataService = {}
 
@@ -13,6 +14,13 @@ local zoneConfig = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChil
 local profiles: {[number]: {[string]: any}} = {}
 local dataSyncRemote: RemoteEvent
 
+local DATASTORE_NAME = "DriveToEarn_v1"
+local AUTO_SAVE_INTERVAL = 120
+local SAVE_RETRIES = 3
+
+local profileStore: DataStore? = nil
+local saveEnabled = true
+
 local function makeDefaultProfile(): {[string]: any}
 	return {
 		Cash = 0,
@@ -23,6 +31,57 @@ local function makeDefaultProfile(): {[string]: any}
 		CurrentZoneId = "starter_zone",
 		RebirthCount = 0,
 	}
+end
+
+local function cloneFlags(source: {[string]: any}?): {[string]: boolean}
+	local result: {[string]: boolean} = {}
+	if source then
+		for key, value in pairs(source) do
+			if value == true then
+				result[tostring(key)] = true
+			end
+		end
+	end
+	return result
+end
+
+local function sanitizeProfile(rawProfile: {[string]: any}?): {[string]: any}
+	local profile = makeDefaultProfile()
+	if not rawProfile then
+		return profile
+	end
+
+	if typeof(rawProfile.Cash) == "number" then
+		profile.Cash = math.max(0, math.floor(rawProfile.Cash))
+	end
+	if typeof(rawProfile.UpgradeLevel) == "number" then
+		profile.UpgradeLevel = math.max(1, math.floor(rawProfile.UpgradeLevel))
+	end
+	if typeof(rawProfile.RebirthCount) == "number" then
+		profile.RebirthCount = math.max(0, math.floor(rawProfile.RebirthCount))
+	end
+
+	profile.OwnedCars = cloneFlags(rawProfile.OwnedCars)
+	profile.UnlockedZones = cloneFlags(rawProfile.UnlockedZones)
+
+	profile.OwnedCars[carConfig.StarterCarId] = true
+	profile.UnlockedZones[zoneConfig.Zones[1].Id] = true
+
+	if typeof(rawProfile.EquippedCarId) == "string" and profile.OwnedCars[rawProfile.EquippedCarId] then
+		profile.EquippedCarId = rawProfile.EquippedCarId
+	end
+
+	if typeof(rawProfile.CurrentZoneId) == "string" and profile.UnlockedZones[rawProfile.CurrentZoneId] then
+		profile.CurrentZoneId = rawProfile.CurrentZoneId
+	else
+		profile.CurrentZoneId = zoneConfig.Zones[1].Id
+	end
+
+	return profile
+end
+
+local function getDataStoreKey(userId: number): string
+	return "player_" .. tostring(userId)
 end
 
 local function getUpgradeTier(level: number)
@@ -68,6 +127,42 @@ local function syncLeaderstats(player: Player)
 	local leaderstats = player:FindFirstChild("leaderstats") :: Folder
 	local cashValue = leaderstats:FindFirstChild("Cash") :: IntValue
 	cashValue.Value = math.floor(profile.Cash)
+end
+
+local function saveProfile(userId: number, profile: {[string]: any}): boolean
+	if not saveEnabled or profileStore == nil then
+		return false
+	end
+	local key = getDataStoreKey(userId)
+	for attempt = 1, SAVE_RETRIES do
+		local ok, err = pcall(function()
+			(profileStore :: DataStore):SetAsync(key, profile)
+		end)
+		if ok then
+			return true
+		end
+		warn(string.format("[PlayerDataService] Save failed user=%d attempt=%d err=%s", userId, attempt, tostring(err)))
+		task.wait(0.5 * attempt)
+	end
+	return false
+end
+
+local function loadProfile(userId: number): {[string]: any}
+	if not saveEnabled or profileStore == nil then
+		return makeDefaultProfile()
+	end
+	local key = getDataStoreKey(userId)
+	for attempt = 1, SAVE_RETRIES do
+		local ok, result = pcall(function()
+			return (profileStore :: DataStore):GetAsync(key)
+		end)
+		if ok then
+			return sanitizeProfile(result)
+		end
+		warn(string.format("[PlayerDataService] Load failed user=%d attempt=%d err=%s", userId, attempt, tostring(result)))
+		task.wait(0.5 * attempt)
+	end
+	return makeDefaultProfile()
 end
 
 function PlayerDataService.GetProfile(player: Player): {[string]: any}
@@ -220,27 +315,61 @@ function PlayerDataService.PushDataSync(player: Player, extra: {[string]: any}?)
 	dataSyncRemote:FireClient(player, payload)
 end
 
+function PlayerDataService.SavePlayer(player: Player)
+	local profile = profiles[player.UserId]
+	if not profile then
+		return
+	end
+	saveProfile(player.UserId, profile)
+end
+
 function PlayerDataService.Init(context)
 	dataSyncRemote = context.Remotes:WaitForChild(remoteNames.Events.DataSync) :: RemoteEvent
+	local ok, storeOrErr = pcall(function()
+		return DataStoreService:GetDataStore(DATASTORE_NAME)
+	end)
+	if ok then
+		profileStore = storeOrErr
+	else
+		saveEnabled = false
+		warn("[PlayerDataService] DataStore unavailable. Running unsaved session.", storeOrErr)
+	end
 	print("[PlayerDataService] Init")
 end
 
 function PlayerDataService.Start()
 	Players.PlayerAdded:Connect(function(player)
-		profiles[player.UserId] = makeDefaultProfile()
+		profiles[player.UserId] = loadProfile(player.UserId)
 		syncLeaderstats(player)
 		PlayerDataService.PushDataSync(player)
 	end)
 
 	for _, player in ipairs(Players:GetPlayers()) do
-		profiles[player.UserId] = makeDefaultProfile()
+		profiles[player.UserId] = loadProfile(player.UserId)
 		syncLeaderstats(player)
 		PlayerDataService.PushDataSync(player)
 	end
 
 	Players.PlayerRemoving:Connect(function(player)
+		PlayerDataService.SavePlayer(player)
 		profiles[player.UserId] = nil
 	end)
+
+	task.spawn(function()
+		while true do
+			task.wait(AUTO_SAVE_INTERVAL)
+			for _, player in ipairs(Players:GetPlayers()) do
+				PlayerDataService.SavePlayer(player)
+			end
+		end
+	end)
+
+	game:BindToClose(function()
+		for _, player in ipairs(Players:GetPlayers()) do
+			PlayerDataService.SavePlayer(player)
+		end
+	end)
+
 	print("[PlayerDataService] Start")
 end
 
