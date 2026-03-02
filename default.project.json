@@ -1,0 +1,18 @@
+{
+  "name": "roblox_car_game",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$path": "ReplicatedStorage"
+    },
+    "ServerScriptService": {
+      "$path": "ServerScriptService"
+    },
+    "StarterPlayer": {
+      "$path": "StarterPlayer"
+    },
+    "StarterGui": {
+      "$path": "StarterGui"
+    }
+  }
+}
