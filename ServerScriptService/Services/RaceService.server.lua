@@ -43,54 +43,9 @@ local function parseCheckpointIndex(name: string): number?
 	return tonumber(digits)
 end
 
-local function buildDefaultTrack()
-	local folder = Workspace:FindFirstChild(RaceConfig.Checkpoints.FolderName)
-	if not folder then
-		folder = Instance.new("Folder")
-		folder.Name = RaceConfig.Checkpoints.FolderName
-		folder.Parent = Workspace
-	end
-
-	local start = RaceConfig.Checkpoints.StartPosition
-	local spacing = RaceConfig.Checkpoints.CheckpointSpacing
-
-	for index = 1, RaceConfig.Checkpoints.DefaultCount do
-		local checkpointName = ("CP%d"):format(index)
-		local checkpoint = folder:FindFirstChild(checkpointName)
-		if not checkpoint then
-			local part = Instance.new("Part")
-			part.Name = checkpointName
-			part.Size = Vector3.new(26, 12, 8)
-			part.Transparency = 0.45
-			part.Material = Enum.Material.Neon
-			part.Color = Color3.fromRGB(0, 170, 255)
-			part.Anchored = true
-			part.CanCollide = false
-			part.Position = start + Vector3.new(spacing * index, 0, 0)
-			part.Parent = folder
-		end
-	end
-
-	local finish = Workspace:FindFirstChild(RaceConfig.Checkpoints.FinishLineName)
-	if not finish then
-		local part = Instance.new("Part")
-		part.Name = RaceConfig.Checkpoints.FinishLineName
-		part.Size = Vector3.new(30, 12, 8)
-		part.Material = Enum.Material.Neon
-		part.Transparency = 0.3
-		part.Color = Color3.fromRGB(255, 255, 255)
-		part.Anchored = true
-		part.CanCollide = false
-		part.Position = start
-		part.Parent = Workspace
-	end
-end
-
 local function rebuildCheckpointCache()
 	orderedCheckpoints = {}
 	finishLine = nil
-
-	buildDefaultTrack()
 
 	local folder = Workspace:FindFirstChild(RaceConfig.Checkpoints.FolderName)
 	if folder then
