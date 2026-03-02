@@ -15,6 +15,7 @@ local requestBuyUpgrade = remotesFolder:WaitForChild(RemoteNames.Functions.Reque
 local requestBuyCar = remotesFolder:WaitForChild(RemoteNames.Functions.RequestBuyCar) :: RemoteFunction
 local requestEquipCar = remotesFolder:WaitForChild(RemoteNames.Functions.RequestEquipCar) :: RemoteFunction
 local requestUnlockZone = remotesFolder:WaitForChild(RemoteNames.Functions.RequestUnlockZone) :: RemoteFunction
+local requestRebirth = remotesFolder:WaitForChild(RemoteNames.Functions.RequestRebirth) :: RemoteFunction
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "MainGui"
@@ -23,7 +24,7 @@ screenGui.Parent = localPlayer:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
 frame.Name = "HUD"
-frame.Size = UDim2.fromOffset(450, 440)
+frame.Size = UDim2.fromOffset(470, 500)
 frame.Position = UDim2.fromOffset(18, 18)
 frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 frame.BackgroundTransparency = 0.2
@@ -37,12 +38,12 @@ list.Parent = frame
 local function makeLabel(name: string): TextLabel
 	local label = Instance.new("TextLabel")
 	label.Name = name
-	label.Size = UDim2.new(1, -12, 0, 26)
+	label.Size = UDim2.new(1, -12, 0, 24)
 	label.Position = UDim2.fromOffset(6, 0)
 	label.BackgroundTransparency = 1
 	label.TextXAlignment = Enum.TextXAlignment.Left
 	label.Font = Enum.Font.GothamBold
-	label.TextSize = 18
+	label.TextSize = 17
 	label.TextColor3 = Color3.fromRGB(240, 240, 240)
 	label.Text = name .. ": --"
 	label.Parent = frame
@@ -56,6 +57,7 @@ local speedLabel = makeLabel("Speed")
 local upgradeLabel = makeLabel("Upgrade")
 local equippedLabel = makeLabel("Equipped Car")
 local zoneUnlockLabel = makeLabel("Zone Unlock")
+local rebirthLabel = makeLabel("Rebirth")
 local msgLabel = makeLabel("Message")
 msgLabel.TextColor3 = Color3.fromRGB(255, 210, 110)
 
@@ -78,6 +80,16 @@ unlockZoneButton.Font = Enum.Font.GothamBold
 unlockZoneButton.TextSize = 18
 unlockZoneButton.Text = "Unlock Zone"
 unlockZoneButton.Parent = frame
+
+local rebirthButton = Instance.new("TextButton")
+rebirthButton.Size = UDim2.new(1, -12, 0, 34)
+rebirthButton.Position = UDim2.fromOffset(6, 0)
+rebirthButton.BackgroundColor3 = Color3.fromRGB(130, 70, 130)
+rebirthButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+rebirthButton.Font = Enum.Font.GothamBold
+rebirthButton.TextSize = 18
+rebirthButton.Text = "Rebirth"
+rebirthButton.Parent = frame
 
 local dealershipHeader = makeLabel("Dealership")
 dealershipHeader.Text = "Dealership"
@@ -102,6 +114,8 @@ local cachedOwnedCars: {[string]: boolean} = {}
 local cachedEquippedCarId = CarConfig.StarterCarId
 local cachedNextZoneId = ""
 local cachedNextZoneCost = 0
+local cachedRebirthCost = 0
+local pendingRebirthConfirm = false
 
 local function toNumber(value: any, fallback: number): number
 	if typeof(value) == "number" then
@@ -141,6 +155,8 @@ dataSyncRemote.OnClientEvent:Connect(function(payload)
 	cachedEquippedCarId = tostring(payload.EquippedCarId or CarConfig.StarterCarId)
 	cachedNextZoneId = tostring(payload.NextZoneId or "")
 	cachedNextZoneCost = math.floor(toNumber(payload.NextZoneCost, 0))
+	cachedRebirthCost = math.floor(toNumber(payload.RebirthCost, 0))
+	local rebirthCount = math.floor(toNumber(payload.RebirthCount, 0))
 
 	cachedOwnedCars = {}
 	if typeof(payload.OwnedCars) == "table" then
@@ -154,6 +170,8 @@ dataSyncRemote.OnClientEvent:Connect(function(payload)
 	zoneLabel.Text = string.format("Zone: %s", zoneId)
 	speedLabel.Text = string.format("Speed: %d", speed)
 	equippedLabel.Text = "Equipped Car: " .. cachedEquippedCarId
+	rebirthLabel.Text = string.format("Rebirths: %d | Next Cost: $%d", rebirthCount, cachedRebirthCost)
+
 	if cachedNextCost > 0 then
 		upgradeLabel.Text = string.format("Upgrade L%d -> L%d: $%d (x%.2f)", upgradeLevel, upgradeLevel + 1, cachedNextCost, nextUpgradeMult)
 		buyUpgradeButton.Text = string.format("Buy Upgrade ($%d)", cachedNextCost)
@@ -174,6 +192,11 @@ dataSyncRemote.OnClientEvent:Connect(function(payload)
 		unlockZoneButton.BackgroundColor3 = Color3.fromRGB(90, 90, 90)
 	end
 
+	rebirthButton.Text = string.format("Rebirth ($%d)", cachedRebirthCost)
+	if pendingRebirthConfirm then
+		msgLabel.Text = "Message: Press Rebirth again to confirm"
+	end
+
 	if payload.AntiCheat then
 		msgLabel.Text = "Message: " .. tostring(payload.AntiCheat)
 	end
@@ -181,6 +204,7 @@ dataSyncRemote.OnClientEvent:Connect(function(payload)
 end)
 
 systemMessageRemote.OnClientEvent:Connect(function(payload)
+	pendingRebirthConfirm = false
 	msgLabel.Text = "Message: " .. tostring(payload.Message or "")
 end)
 
@@ -199,6 +223,22 @@ unlockZoneButton.Activated:Connect(function()
 		return
 	end
 	local ok, msg = requestUnlockZone:InvokeServer(cachedNextZoneId)
+	if not ok then
+		msgLabel.Text = "Message: " .. tostring(msg)
+	end
+end)
+
+rebirthButton.Activated:Connect(function()
+	if cachedRebirthCost <= 0 then
+		return
+	end
+	if not pendingRebirthConfirm then
+		pendingRebirthConfirm = true
+		msgLabel.Text = "Message: Press Rebirth again to confirm reset"
+		return
+	end
+	pendingRebirthConfirm = false
+	local ok, msg = requestRebirth:InvokeServer()
 	if not ok then
 		msgLabel.Text = "Message: " .. tostring(msg)
 	end

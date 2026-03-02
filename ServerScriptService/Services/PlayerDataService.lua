@@ -165,6 +165,11 @@ local function loadProfile(userId: number): {[string]: any}
 	return makeDefaultProfile()
 end
 
+function PlayerDataService.GetRebirthCost(player: Player): number
+	local profile = PlayerDataService.GetProfile(player)
+	return 100000 * (profile.RebirthCount + 1)
+end
+
 function PlayerDataService.GetProfile(player: Player): {[string]: any}
 	local profile = profiles[player.UserId]
 	if not profile then
@@ -268,6 +273,18 @@ function PlayerDataService.UnlockZone(player: Player, zoneId: string)
 	profile.UnlockedZones[zoneId] = true
 end
 
+function PlayerDataService.ApplyRebirthReset(player: Player)
+	local profile = PlayerDataService.GetProfile(player)
+	profile.RebirthCount += 1
+	profile.Cash = 0
+	profile.UpgradeLevel = 1
+	profile.OwnedCars = { starter_hatch = true }
+	profile.EquippedCarId = "starter_hatch"
+	profile.UnlockedZones = { starter_zone = true }
+	profile.CurrentZoneId = "starter_zone"
+	syncLeaderstats(player)
+end
+
 local function buildStringList(flags: {[string]: boolean}): {string}
 	local ids = {}
 	for id, owned in pairs(flags) do
@@ -299,6 +316,7 @@ function PlayerDataService.PushDataSync(player: Player, extra: {[string]: any}?)
 		CurrentZoneId = profile.CurrentZoneId,
 		RebirthCount = profile.RebirthCount,
 		RebirthMultiplier = PlayerDataService.GetRebirthMultiplier(player),
+		RebirthCost = PlayerDataService.GetRebirthCost(player),
 		NextUpgradeCost = if nextUpgrade then nextUpgrade.Cost else 0,
 		NextUpgradeMultiplier = if nextUpgrade then nextUpgrade.Multiplier else PlayerDataService.GetUpgradeMultiplier(player),
 		EquippedCarId = PlayerDataService.GetEquippedCarId(player),
