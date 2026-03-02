@@ -9,6 +9,7 @@ local CarService = {}
 local carConfig = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Config"):WaitForChild("CarConfig"))
 local remoteNames = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Shared"):WaitForChild("RemoteNames"))
 
+local dataService: any
 local remotesFolder: Folder
 local requestSpawnCar: RemoteFunction
 local requestResetCar: RemoteFunction
@@ -131,7 +132,7 @@ end
 
 function CarService.SpawnCar(player: Player, carId: string?): Model
 	clearPlayerCar(player)
-	local selectedId = carId or carConfig.StarterCarId
+	local selectedId = carId or dataService.GetEquippedCarId(player)
 	local model = buildCarModel(player, selectedId)
 	carsByUserId[player.UserId] = model
 	return model
@@ -169,6 +170,7 @@ function CarService.GetPlayerCarPrimaryPart(player: Player): BasePart?
 end
 
 function CarService.Init(context)
+	dataService = context.Services.PlayerDataService
 	remotesFolder = context.Remotes
 	requestSpawnCar = remotesFolder:WaitForChild(remoteNames.Functions.RequestSpawnCar) :: RemoteFunction
 	requestResetCar = remotesFolder:WaitForChild(remoteNames.Functions.RequestResetCar) :: RemoteFunction

@@ -7,6 +7,7 @@ local PlayerDataService = {}
 
 local remoteNames = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Shared"):WaitForChild("RemoteNames"))
 local upgradeConfig = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Config"):WaitForChild("UpgradeConfig"))
+local carConfig = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Config"):WaitForChild("CarConfig"))
 
 local profiles: {[number]: {[string]: any}} = {}
 local dataSyncRemote: RemoteEvent
@@ -136,6 +137,42 @@ function PlayerDataService.GetRebirthMultiplier(player: Player): number
 	return 1 + (profile.RebirthCount * 0.2)
 end
 
+function PlayerDataService.OwnsCar(player: Player, carId: string): boolean
+	local profile = PlayerDataService.GetProfile(player)
+	return profile.OwnedCars[carId] == true
+end
+
+function PlayerDataService.AddOwnedCar(player: Player, carId: string)
+	local profile = PlayerDataService.GetProfile(player)
+	profile.OwnedCars[carId] = true
+end
+
+function PlayerDataService.GetEquippedCarId(player: Player): string
+	local profile = PlayerDataService.GetProfile(player)
+	if carConfig.Cars[profile.EquippedCarId] then
+		return profile.EquippedCarId
+	end
+	return carConfig.StarterCarId
+end
+
+function PlayerDataService.SetEquippedCarId(player: Player, carId: string)
+	local profile = PlayerDataService.GetProfile(player)
+	if profile.OwnedCars[carId] and carConfig.Cars[carId] then
+		profile.EquippedCarId = carId
+	end
+end
+
+local function buildOwnedCarIdList(ownedCars: {[string]: boolean}): {string}
+	local ids = {}
+	for id, owned in pairs(ownedCars) do
+		if owned then
+			table.insert(ids, id)
+		end
+	end
+	table.sort(ids)
+	return ids
+end
+
 function PlayerDataService.PushDataSync(player: Player, extra: {[string]: any}?)
 	local profile = PlayerDataService.GetProfile(player)
 	local nextUpgrade = PlayerDataService.GetNextUpgrade(player)
@@ -148,6 +185,8 @@ function PlayerDataService.PushDataSync(player: Player, extra: {[string]: any}?)
 		RebirthMultiplier = PlayerDataService.GetRebirthMultiplier(player),
 		NextUpgradeCost = if nextUpgrade then nextUpgrade.Cost else 0,
 		NextUpgradeMultiplier = if nextUpgrade then nextUpgrade.Multiplier else PlayerDataService.GetUpgradeMultiplier(player),
+		EquippedCarId = PlayerDataService.GetEquippedCarId(player),
+		OwnedCars = buildOwnedCarIdList(profile.OwnedCars),
 	}
 	if extra then
 		for key, value in pairs(extra) do

@@ -7,10 +7,13 @@ local localPlayer = Players.LocalPlayer
 local modulesFolder = ReplicatedStorage:WaitForChild("Modules")
 local remotesFolder = ReplicatedStorage:WaitForChild("Remotes")
 local RemoteNames = require(modulesFolder:WaitForChild("Shared"):WaitForChild("RemoteNames"))
+local CarConfig = require(modulesFolder:WaitForChild("Config"):WaitForChild("CarConfig"))
 
 local dataSyncRemote = remotesFolder:WaitForChild(RemoteNames.Events.DataSync) :: RemoteEvent
 local systemMessageRemote = remotesFolder:WaitForChild(RemoteNames.Events.SystemMessage) :: RemoteEvent
 local requestBuyUpgrade = remotesFolder:WaitForChild(RemoteNames.Functions.RequestBuyUpgrade) :: RemoteFunction
+local requestBuyCar = remotesFolder:WaitForChild(RemoteNames.Functions.RequestBuyCar) :: RemoteFunction
+local requestEquipCar = remotesFolder:WaitForChild(RemoteNames.Functions.RequestEquipCar) :: RemoteFunction
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "MainGui"
@@ -19,7 +22,7 @@ screenGui.Parent = localPlayer:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
 frame.Name = "HUD"
-frame.Size = UDim2.fromOffset(420, 260)
+frame.Size = UDim2.fromOffset(430, 390)
 frame.Position = UDim2.fromOffset(18, 18)
 frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 frame.BackgroundTransparency = 0.2
@@ -50,6 +53,7 @@ local multLabel = makeLabel("Multiplier")
 local zoneLabel = makeLabel("Zone")
 local speedLabel = makeLabel("Speed")
 local upgradeLabel = makeLabel("Upgrade")
+local equippedLabel = makeLabel("Equipped Car")
 local msgLabel = makeLabel("Message")
 msgLabel.TextColor3 = Color3.fromRGB(255, 210, 110)
 
@@ -64,13 +68,51 @@ buyUpgradeButton.TextSize = 18
 buyUpgradeButton.Text = "Buy Earnings Upgrade"
 buyUpgradeButton.Parent = frame
 
+local dealershipHeader = makeLabel("Dealership")
+dealershipHeader.Text = "Dealership"
+
+local carButtonsById: {[string]: TextButton} = {}
+for _, carDef in pairs(CarConfig.Cars) do
+	local button = Instance.new("TextButton")
+	button.Name = "Car_" .. carDef.Id
+	button.Size = UDim2.new(1, -12, 0, 30)
+	button.Position = UDim2.fromOffset(6, 0)
+	button.BackgroundColor3 = Color3.fromRGB(40, 60, 100)
+	button.TextColor3 = Color3.fromRGB(255, 255, 255)
+	button.Font = Enum.Font.Gotham
+	button.TextSize = 16
+	button.Text = string.format("%s ($%d)", carDef.DisplayName, carDef.Cost)
+	button.Parent = frame
+	carButtonsById[carDef.Id] = button
+end
+
 local cachedNextCost = 0
+local cachedOwnedCars: {[string]: boolean} = {}
+local cachedEquippedCarId = CarConfig.StarterCarId
 
 local function toNumber(value: any, fallback: number): number
 	if typeof(value) == "number" then
 		return value
 	end
 	return fallback
+end
+
+local function rebuildCarButtons()
+	for carId, button in pairs(carButtonsById) do
+		local carDef = CarConfig.Cars[carId]
+		local owned = cachedOwnedCars[carId] == true
+		local equipped = carId == cachedEquippedCarId
+		if equipped then
+			button.BackgroundColor3 = Color3.fromRGB(40, 140, 70)
+			button.Text = string.format("%s (Equipped)", carDef.DisplayName)
+		elseif owned then
+			button.BackgroundColor3 = Color3.fromRGB(70, 90, 130)
+			button.Text = string.format("%s (Owned)", carDef.DisplayName)
+		else
+			button.BackgroundColor3 = Color3.fromRGB(40, 60, 100)
+			button.Text = string.format("%s ($%d)", carDef.DisplayName, carDef.Cost)
+		end
+	end
 end
 
 dataSyncRemote.OnClientEvent:Connect(function(payload)
@@ -83,11 +125,20 @@ dataSyncRemote.OnClientEvent:Connect(function(payload)
 	local upgradeLevel = math.floor(toNumber(payload.UpgradeLevel, 1))
 	cachedNextCost = math.floor(toNumber(payload.NextUpgradeCost, 0))
 	local nextUpgradeMult = toNumber(payload.NextUpgradeMultiplier, upMult)
+	cachedEquippedCarId = tostring(payload.EquippedCarId or CarConfig.StarterCarId)
+
+	cachedOwnedCars = {}
+	if typeof(payload.OwnedCars) == "table" then
+		for _, carId in ipairs(payload.OwnedCars) do
+			cachedOwnedCars[tostring(carId)] = true
+		end
+	end
 
 	cashLabel.Text = string.format("Cash: $%d", cash)
 	multLabel.Text = string.format("Multiplier: x%.2f (Zone x%.2f * Up x%.2f * Reb x%.2f)", zoneMult * upMult * rebirthMult, zoneMult, upMult, rebirthMult)
 	zoneLabel.Text = string.format("Zone: %s", zoneId)
 	speedLabel.Text = string.format("Speed: %d", speed)
+	equippedLabel.Text = "Equipped Car: " .. cachedEquippedCarId
 	if cachedNextCost > 0 then
 		upgradeLabel.Text = string.format("Upgrade L%d -> L%d: $%d (x%.2f)", upgradeLevel, upgradeLevel + 1, cachedNextCost, nextUpgradeMult)
 		buyUpgradeButton.Text = string.format("Buy Upgrade ($%d)", cachedNextCost)
@@ -100,6 +151,7 @@ dataSyncRemote.OnClientEvent:Connect(function(payload)
 	if payload.AntiCheat then
 		msgLabel.Text = "Message: " .. tostring(payload.AntiCheat)
 	end
+	rebuildCarButtons()
 end)
 
 systemMessageRemote.OnClientEvent:Connect(function(payload)
@@ -115,5 +167,21 @@ buyUpgradeButton.Activated:Connect(function()
 		msgLabel.Text = "Message: " .. tostring(msg)
 	end
 end)
+
+for carId, button in pairs(carButtonsById) do
+	button.Activated:Connect(function()
+		if cachedOwnedCars[carId] then
+			local ok, msg = requestEquipCar:InvokeServer(carId)
+			if not ok then
+				msgLabel.Text = "Message: " .. tostring(msg)
+			end
+		else
+			local ok, msg = requestBuyCar:InvokeServer(carId)
+			if not ok then
+				msgLabel.Text = "Message: " .. tostring(msg)
+			end
+		end
+	end)
+end
 
 print("[UIController] Ready")
