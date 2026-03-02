@@ -2,6 +2,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
 
 local localPlayer = Players.LocalPlayer
 local modulesFolder = ReplicatedStorage:WaitForChild("Modules")
@@ -11,6 +12,7 @@ local CarConfig = require(modulesFolder:WaitForChild("Config"):WaitForChild("Car
 
 local dataSyncRemote = remotesFolder:WaitForChild(RemoteNames.Events.DataSync) :: RemoteEvent
 local systemMessageRemote = remotesFolder:WaitForChild(RemoteNames.Events.SystemMessage) :: RemoteEvent
+local cashPopupRemote = remotesFolder:WaitForChild(RemoteNames.Events.CashPopup) :: RemoteEvent
 local requestBuyUpgrade = remotesFolder:WaitForChild(RemoteNames.Functions.RequestBuyUpgrade) :: RemoteFunction
 local requestBuyCar = remotesFolder:WaitForChild(RemoteNames.Functions.RequestBuyCar) :: RemoteFunction
 local requestEquipCar = remotesFolder:WaitForChild(RemoteNames.Functions.RequestEquipCar) :: RemoteFunction
@@ -27,8 +29,13 @@ frame.Name = "HUD"
 frame.Size = UDim2.fromOffset(470, 500)
 frame.Position = UDim2.fromOffset(18, 18)
 frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-frame.BackgroundTransparency = 0.2
+frame.BackgroundTransparency = 0.15
 frame.Parent = screenGui
+
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(80, 80, 90)
+stroke.Thickness = 1
+stroke.Parent = frame
 
 local list = Instance.new("UIListLayout")
 list.Padding = UDim.new(0, 6)
@@ -142,6 +149,32 @@ local function rebuildCarButtons()
 	end
 end
 
+local function spawnCashPopup(amount: number)
+	local popup = Instance.new("TextLabel")
+	popup.Size = UDim2.fromOffset(180, 34)
+	popup.AnchorPoint = Vector2.new(0.5, 0.5)
+	popup.Position = UDim2.fromScale(0.5, 0.62)
+	popup.BackgroundTransparency = 1
+	popup.TextColor3 = Color3.fromRGB(90, 255, 120)
+	popup.Font = Enum.Font.GothamBlack
+	popup.TextScaled = true
+	popup.Text = string.format("+$%d", amount)
+	popup.Parent = screenGui
+
+	local tween = TweenService:Create(
+		popup,
+		TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{
+			Position = UDim2.fromScale(0.5, 0.52),
+			TextTransparency = 1,
+		}
+	)
+	tween:Play()
+	tween.Completed:Connect(function()
+		popup:Destroy()
+	end)
+end
+
 dataSyncRemote.OnClientEvent:Connect(function(payload)
 	local cash = math.floor(toNumber(payload.Cash, 0))
 	local zoneMult = toNumber(payload.ZoneMultiplier, 1)
@@ -201,6 +234,13 @@ dataSyncRemote.OnClientEvent:Connect(function(payload)
 		msgLabel.Text = "Message: " .. tostring(payload.AntiCheat)
 	end
 	rebuildCarButtons()
+end)
+
+cashPopupRemote.OnClientEvent:Connect(function(payload)
+	local amount = math.floor(toNumber(payload.Amount, 0))
+	if amount > 0 then
+		spawnCashPopup(amount)
+	end
 end)
 
 systemMessageRemote.OnClientEvent:Connect(function(payload)
