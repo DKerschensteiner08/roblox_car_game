@@ -8,6 +8,7 @@ local PlayerDataService = {}
 local remoteNames = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Shared"):WaitForChild("RemoteNames"))
 local upgradeConfig = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Config"):WaitForChild("UpgradeConfig"))
 local carConfig = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Config"):WaitForChild("CarConfig"))
+local zoneConfig = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Config"):WaitForChild("ZoneConfig"))
 
 local profiles: {[number]: {[string]: any}} = {}
 local dataSyncRemote: RemoteEvent
@@ -162,9 +163,19 @@ function PlayerDataService.SetEquippedCarId(player: Player, carId: string)
 	end
 end
 
-local function buildOwnedCarIdList(ownedCars: {[string]: boolean}): {string}
+function PlayerDataService.IsZoneUnlocked(player: Player, zoneId: string): boolean
+	local profile = PlayerDataService.GetProfile(player)
+	return profile.UnlockedZones[zoneId] == true
+end
+
+function PlayerDataService.UnlockZone(player: Player, zoneId: string)
+	local profile = PlayerDataService.GetProfile(player)
+	profile.UnlockedZones[zoneId] = true
+end
+
+local function buildStringList(flags: {[string]: boolean}): {string}
 	local ids = {}
-	for id, owned in pairs(ownedCars) do
+	for id, owned in pairs(flags) do
 		if owned then
 			table.insert(ids, id)
 		end
@@ -173,9 +184,19 @@ local function buildOwnedCarIdList(ownedCars: {[string]: boolean}): {string}
 	return ids
 end
 
+local function getNextLockedZoneInfo(unlockedZones: {[string]: boolean}): (string, number)
+	for _, zone in ipairs(zoneConfig.Zones) do
+		if not unlockedZones[zone.Id] then
+			return zone.Id, zone.UnlockCost
+		end
+	end
+	return "", 0
+end
+
 function PlayerDataService.PushDataSync(player: Player, extra: {[string]: any}?)
 	local profile = PlayerDataService.GetProfile(player)
 	local nextUpgrade = PlayerDataService.GetNextUpgrade(player)
+	local nextZoneId, nextZoneCost = getNextLockedZoneInfo(profile.UnlockedZones)
 	local payload = {
 		Cash = profile.Cash,
 		UpgradeLevel = profile.UpgradeLevel,
@@ -186,7 +207,10 @@ function PlayerDataService.PushDataSync(player: Player, extra: {[string]: any}?)
 		NextUpgradeCost = if nextUpgrade then nextUpgrade.Cost else 0,
 		NextUpgradeMultiplier = if nextUpgrade then nextUpgrade.Multiplier else PlayerDataService.GetUpgradeMultiplier(player),
 		EquippedCarId = PlayerDataService.GetEquippedCarId(player),
-		OwnedCars = buildOwnedCarIdList(profile.OwnedCars),
+		OwnedCars = buildStringList(profile.OwnedCars),
+		UnlockedZones = buildStringList(profile.UnlockedZones),
+		NextZoneId = nextZoneId,
+		NextZoneCost = nextZoneCost,
 	}
 	if extra then
 		for key, value in pairs(extra) do

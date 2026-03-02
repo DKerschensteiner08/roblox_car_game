@@ -14,6 +14,7 @@ local systemMessageRemote = remotesFolder:WaitForChild(RemoteNames.Events.System
 local requestBuyUpgrade = remotesFolder:WaitForChild(RemoteNames.Functions.RequestBuyUpgrade) :: RemoteFunction
 local requestBuyCar = remotesFolder:WaitForChild(RemoteNames.Functions.RequestBuyCar) :: RemoteFunction
 local requestEquipCar = remotesFolder:WaitForChild(RemoteNames.Functions.RequestEquipCar) :: RemoteFunction
+local requestUnlockZone = remotesFolder:WaitForChild(RemoteNames.Functions.RequestUnlockZone) :: RemoteFunction
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "MainGui"
@@ -22,7 +23,7 @@ screenGui.Parent = localPlayer:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
 frame.Name = "HUD"
-frame.Size = UDim2.fromOffset(430, 390)
+frame.Size = UDim2.fromOffset(450, 440)
 frame.Position = UDim2.fromOffset(18, 18)
 frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 frame.BackgroundTransparency = 0.2
@@ -54,11 +55,11 @@ local zoneLabel = makeLabel("Zone")
 local speedLabel = makeLabel("Speed")
 local upgradeLabel = makeLabel("Upgrade")
 local equippedLabel = makeLabel("Equipped Car")
+local zoneUnlockLabel = makeLabel("Zone Unlock")
 local msgLabel = makeLabel("Message")
 msgLabel.TextColor3 = Color3.fromRGB(255, 210, 110)
 
 local buyUpgradeButton = Instance.new("TextButton")
-buyUpgradeButton.Name = "BuyUpgrade"
 buyUpgradeButton.Size = UDim2.new(1, -12, 0, 34)
 buyUpgradeButton.Position = UDim2.fromOffset(6, 0)
 buyUpgradeButton.BackgroundColor3 = Color3.fromRGB(55, 120, 55)
@@ -67,6 +68,16 @@ buyUpgradeButton.Font = Enum.Font.GothamBold
 buyUpgradeButton.TextSize = 18
 buyUpgradeButton.Text = "Buy Earnings Upgrade"
 buyUpgradeButton.Parent = frame
+
+local unlockZoneButton = Instance.new("TextButton")
+unlockZoneButton.Size = UDim2.new(1, -12, 0, 34)
+unlockZoneButton.Position = UDim2.fromOffset(6, 0)
+unlockZoneButton.BackgroundColor3 = Color3.fromRGB(80, 90, 140)
+unlockZoneButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+unlockZoneButton.Font = Enum.Font.GothamBold
+unlockZoneButton.TextSize = 18
+unlockZoneButton.Text = "Unlock Zone"
+unlockZoneButton.Parent = frame
 
 local dealershipHeader = makeLabel("Dealership")
 dealershipHeader.Text = "Dealership"
@@ -89,6 +100,8 @@ end
 local cachedNextCost = 0
 local cachedOwnedCars: {[string]: boolean} = {}
 local cachedEquippedCarId = CarConfig.StarterCarId
+local cachedNextZoneId = ""
+local cachedNextZoneCost = 0
 
 local function toNumber(value: any, fallback: number): number
 	if typeof(value) == "number" then
@@ -126,6 +139,8 @@ dataSyncRemote.OnClientEvent:Connect(function(payload)
 	cachedNextCost = math.floor(toNumber(payload.NextUpgradeCost, 0))
 	local nextUpgradeMult = toNumber(payload.NextUpgradeMultiplier, upMult)
 	cachedEquippedCarId = tostring(payload.EquippedCarId or CarConfig.StarterCarId)
+	cachedNextZoneId = tostring(payload.NextZoneId or "")
+	cachedNextZoneCost = math.floor(toNumber(payload.NextZoneCost, 0))
 
 	cachedOwnedCars = {}
 	if typeof(payload.OwnedCars) == "table" then
@@ -148,6 +163,17 @@ dataSyncRemote.OnClientEvent:Connect(function(payload)
 		buyUpgradeButton.Text = "Max Upgrade Reached"
 		buyUpgradeButton.BackgroundColor3 = Color3.fromRGB(90, 90, 90)
 	end
+
+	if cachedNextZoneCost > 0 and cachedNextZoneId ~= "" then
+		zoneUnlockLabel.Text = string.format("Next Zone: %s ($%d)", cachedNextZoneId, cachedNextZoneCost)
+		unlockZoneButton.Text = string.format("Unlock Zone %s ($%d)", cachedNextZoneId, cachedNextZoneCost)
+		unlockZoneButton.BackgroundColor3 = Color3.fromRGB(80, 90, 140)
+	else
+		zoneUnlockLabel.Text = "Zone Unlock: All zones unlocked"
+		unlockZoneButton.Text = "All Zones Unlocked"
+		unlockZoneButton.BackgroundColor3 = Color3.fromRGB(90, 90, 90)
+	end
+
 	if payload.AntiCheat then
 		msgLabel.Text = "Message: " .. tostring(payload.AntiCheat)
 	end
@@ -163,6 +189,16 @@ buyUpgradeButton.Activated:Connect(function()
 		return
 	end
 	local ok, msg = requestBuyUpgrade:InvokeServer()
+	if not ok then
+		msgLabel.Text = "Message: " .. tostring(msg)
+	end
+end)
+
+unlockZoneButton.Activated:Connect(function()
+	if cachedNextZoneCost <= 0 or cachedNextZoneId == "" then
+		return
+	end
+	local ok, msg = requestUnlockZone:InvokeServer(cachedNextZoneId)
 	if not ok then
 		msgLabel.Text = "Message: " .. tostring(msg)
 	end
