@@ -23,13 +23,22 @@ local function makeDefaultProfile(): {[string]: any}
 	}
 end
 
-local function getUpgradeMultiplier(level: number): number
+local function getUpgradeTier(level: number)
 	for _, tier in ipairs(upgradeConfig.Earnings) do
 		if tier.Level == level then
-			return tier.Multiplier
+			return tier
 		end
 	end
-	return 1
+	return upgradeConfig.Earnings[1]
+end
+
+local function getNextUpgradeTier(level: number)
+	for _, tier in ipairs(upgradeConfig.Earnings) do
+		if tier.Level == level + 1 then
+			return tier
+		end
+	end
+	return nil
 end
 
 local function ensureLeaderstats(player: Player)
@@ -103,9 +112,23 @@ function PlayerDataService.SpendCash(player: Player, amount: number): boolean
 	return true
 end
 
+function PlayerDataService.GetUpgradeLevel(player: Player): number
+	return PlayerDataService.GetProfile(player).UpgradeLevel
+end
+
+function PlayerDataService.SetUpgradeLevel(player: Player, level: number)
+	local profile = PlayerDataService.GetProfile(player)
+	profile.UpgradeLevel = math.max(1, math.floor(level))
+end
+
 function PlayerDataService.GetUpgradeMultiplier(player: Player): number
 	local profile = PlayerDataService.GetProfile(player)
-	return getUpgradeMultiplier(profile.UpgradeLevel)
+	return getUpgradeTier(profile.UpgradeLevel).Multiplier
+end
+
+function PlayerDataService.GetNextUpgrade(player: Player)
+	local profile = PlayerDataService.GetProfile(player)
+	return getNextUpgradeTier(profile.UpgradeLevel)
 end
 
 function PlayerDataService.GetRebirthMultiplier(player: Player): number
@@ -115,6 +138,7 @@ end
 
 function PlayerDataService.PushDataSync(player: Player, extra: {[string]: any}?)
 	local profile = PlayerDataService.GetProfile(player)
+	local nextUpgrade = PlayerDataService.GetNextUpgrade(player)
 	local payload = {
 		Cash = profile.Cash,
 		UpgradeLevel = profile.UpgradeLevel,
@@ -122,6 +146,8 @@ function PlayerDataService.PushDataSync(player: Player, extra: {[string]: any}?)
 		CurrentZoneId = profile.CurrentZoneId,
 		RebirthCount = profile.RebirthCount,
 		RebirthMultiplier = PlayerDataService.GetRebirthMultiplier(player),
+		NextUpgradeCost = if nextUpgrade then nextUpgrade.Cost else 0,
+		NextUpgradeMultiplier = if nextUpgrade then nextUpgrade.Multiplier else PlayerDataService.GetUpgradeMultiplier(player),
 	}
 	if extra then
 		for key, value in pairs(extra) do

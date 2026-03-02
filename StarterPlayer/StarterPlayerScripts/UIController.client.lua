@@ -9,6 +9,8 @@ local remotesFolder = ReplicatedStorage:WaitForChild("Remotes")
 local RemoteNames = require(modulesFolder:WaitForChild("Shared"):WaitForChild("RemoteNames"))
 
 local dataSyncRemote = remotesFolder:WaitForChild(RemoteNames.Events.DataSync) :: RemoteEvent
+local systemMessageRemote = remotesFolder:WaitForChild(RemoteNames.Events.SystemMessage) :: RemoteEvent
+local requestBuyUpgrade = remotesFolder:WaitForChild(RemoteNames.Functions.RequestBuyUpgrade) :: RemoteFunction
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "MainGui"
@@ -17,7 +19,7 @@ screenGui.Parent = localPlayer:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
 frame.Name = "HUD"
-frame.Size = UDim2.fromOffset(300, 170)
+frame.Size = UDim2.fromOffset(420, 260)
 frame.Position = UDim2.fromOffset(18, 18)
 frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 frame.BackgroundTransparency = 0.2
@@ -47,8 +49,22 @@ local cashLabel = makeLabel("Cash")
 local multLabel = makeLabel("Multiplier")
 local zoneLabel = makeLabel("Zone")
 local speedLabel = makeLabel("Speed")
+local upgradeLabel = makeLabel("Upgrade")
 local msgLabel = makeLabel("Message")
 msgLabel.TextColor3 = Color3.fromRGB(255, 210, 110)
+
+local buyUpgradeButton = Instance.new("TextButton")
+buyUpgradeButton.Name = "BuyUpgrade"
+buyUpgradeButton.Size = UDim2.new(1, -12, 0, 34)
+buyUpgradeButton.Position = UDim2.fromOffset(6, 0)
+buyUpgradeButton.BackgroundColor3 = Color3.fromRGB(55, 120, 55)
+buyUpgradeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+buyUpgradeButton.Font = Enum.Font.GothamBold
+buyUpgradeButton.TextSize = 18
+buyUpgradeButton.Text = "Buy Earnings Upgrade"
+buyUpgradeButton.Parent = frame
+
+local cachedNextCost = 0
 
 local function toNumber(value: any, fallback: number): number
 	if typeof(value) == "number" then
@@ -64,15 +80,39 @@ dataSyncRemote.OnClientEvent:Connect(function(payload)
 	local rebirthMult = toNumber(payload.RebirthMultiplier, 1)
 	local speed = math.floor(toNumber(payload.Speed, 0))
 	local zoneId = tostring(payload.CurrentZoneId or "starter_zone")
+	local upgradeLevel = math.floor(toNumber(payload.UpgradeLevel, 1))
+	cachedNextCost = math.floor(toNumber(payload.NextUpgradeCost, 0))
+	local nextUpgradeMult = toNumber(payload.NextUpgradeMultiplier, upMult)
 
 	cashLabel.Text = string.format("Cash: $%d", cash)
 	multLabel.Text = string.format("Multiplier: x%.2f (Zone x%.2f * Up x%.2f * Reb x%.2f)", zoneMult * upMult * rebirthMult, zoneMult, upMult, rebirthMult)
 	zoneLabel.Text = string.format("Zone: %s", zoneId)
 	speedLabel.Text = string.format("Speed: %d", speed)
+	if cachedNextCost > 0 then
+		upgradeLabel.Text = string.format("Upgrade L%d -> L%d: $%d (x%.2f)", upgradeLevel, upgradeLevel + 1, cachedNextCost, nextUpgradeMult)
+		buyUpgradeButton.Text = string.format("Buy Upgrade ($%d)", cachedNextCost)
+		buyUpgradeButton.BackgroundColor3 = Color3.fromRGB(55, 120, 55)
+	else
+		upgradeLabel.Text = string.format("Upgrade: MAX (x%.2f)", upMult)
+		buyUpgradeButton.Text = "Max Upgrade Reached"
+		buyUpgradeButton.BackgroundColor3 = Color3.fromRGB(90, 90, 90)
+	end
 	if payload.AntiCheat then
 		msgLabel.Text = "Message: " .. tostring(payload.AntiCheat)
-	else
-		msgLabel.Text = "Message: Driving earns cash"
+	end
+end)
+
+systemMessageRemote.OnClientEvent:Connect(function(payload)
+	msgLabel.Text = "Message: " .. tostring(payload.Message or "")
+end)
+
+buyUpgradeButton.Activated:Connect(function()
+	if cachedNextCost <= 0 then
+		return
+	end
+	local ok, msg = requestBuyUpgrade:InvokeServer()
+	if not ok then
+		msgLabel.Text = "Message: " .. tostring(msg)
 	end
 end)
 
